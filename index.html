@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RETVec Online</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.10.0/dist/tf.min.js"></script>
+  <style>
+    *{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;background:#f5f7fb;color:#172033}.wrap{max-width:900px;margin:40px auto;padding:20px}.card{background:#fff;border:1px solid #e4e8f0;border-radius:18px;padding:24px;box-shadow:0 10px 35px rgba(20,30,50,.07)}h1{margin:0 0 6px;font-size:30px}.sub{color:#667085;margin-bottom:22px}textarea{width:100%;min-height:150px;padding:15px;border:1px solid #ccd3df;border-radius:12px;font:15px/1.5 Arial;resize:vertical;outline:none}textarea:focus{border-color:#5b67f1}button{border:0;border-radius:10px;padding:12px 18px;font-weight:700;cursor:pointer;margin-top:12px;margin-right:8px}.primary{background:#4f46e5;color:#fff}.secondary{background:#eef0f6;color:#27324a}.status{margin:15px 0;padding:10px 12px;border-radius:9px;background:#f1f3f7;color:#566174;font-size:14px}.stats{display:flex;gap:10px;flex-wrap:wrap;margin:18px 0}.pill{background:#f1f3f7;padding:8px 12px;border-radius:999px;font-size:13px}.output{background:#111827;color:#d1d5db;border-radius:12px;padding:16px;overflow:auto;min-height:120px;white-space:pre-wrap;word-break:break-all;font:12px/1.5 ui-monospace,SFMono-Regular,Consolas,monospace}.note{margin-top:18px;font-size:13px;color:#667085}.ok{color:#087443}.err{color:#b42318}</style>
+</head>
+<body>
+<div class="wrap"><div class="card">
+  <h1>RETVec Online</h1>
+  <div class="sub">Generate a 256-dimensional RETVec embedding directly in your browser.</div>
+  <textarea id="input" placeholder="Type text here..."></textarea>
+  <div><button class="primary" id="run">Generate Vector</button><button class="secondary" id="copy">Copy JSON</button><button class="secondary" id="download">Download JSON</button></div>
+  <div class="status" id="status">Loading RETVec model…</div>
+  <div class="stats"><div class="pill">Model: RETVec v1</div><div class="pill">Input: 16 × 24</div><div class="pill">Output: 256 dimensions</div><div class="pill">Runs locally</div></div>
+  <div class="output" id="output">Vector will appear here.</div>
+  <div class="note">This page uses the RETVec JavaScript model included with the Google Research repository. TensorFlow.js is loaded from jsDelivr; the model files are local to this site.</div>
+</div></div>
+<script>
+let model=null, lastVector=null;
+const $=id=>document.getElementById(id);
+function binarize(input,strLen=16,encodingSize=24){
+  const masks=[]; let p=1; for(let i=encodingSize;i;i--){masks.push(p);p*=2;} masks.reverse();
+  const chars=input.slice(0,strLen), rows=[];
+  for(let i=0;i<chars.length;i++){
+    const val=chars.charCodeAt(i), row=[];
+    for(let j=0;j<encodingSize;j++) row.push((val & masks[j]) ? 1 : 0);
+    rows.push(row);
+  }
+  while(rows.length<strLen) rows.push(new Array(encodingSize).fill(0));
+  return rows;
+}
+async function load(){
+  try{ await tf.ready(); model=await tf.loadGraphModel('./model/model.json'); $('status').innerHTML='<span class="ok">✓ Model loaded and ready.</span>'; }
+  catch(e){ $('status').innerHTML='<span class="err">Model failed to load: '+e.message+'</span>'; }
+}
+async function generate(){
+  if(!model)return alert('Model is still loading.');
+  const text=$('input').value;
+  if(!text.trim())return alert('Enter some text first.');
+  $('status').textContent='Generating embedding…';
+  try{
+    const input=tf.tensor([binarize(text)]);
+    const result=model.predict(input);
+    const tensor=Array.isArray(result)?result[0]:result;
+    lastVector=Array.from(await tensor.data());
+    $('output').textContent=JSON.stringify(lastVector);
+    $('status').innerHTML='<span class="ok">✓ Generated 256-dimensional vector.</span>';
+    input.dispose(); if(Array.isArray(result)) result.forEach(x=>x.dispose()); else result.dispose();
+  }catch(e){$('status').innerHTML='<span class="err">Generation error: '+e.message+'</span>';}
+}
+$('run').onclick=generate;
+$('copy').onclick=async()=>{if(!lastVector)return alert('Generate a vector first.');await navigator.clipboard.writeText(JSON.stringify(lastVector));$('status').textContent='Vector copied to clipboard.';};
+$('download').onclick=()=>{if(!lastVector)return alert('Generate a vector first.');const blob=new Blob([JSON.stringify(lastVector,null,2)],{type:'application/json'}),a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='retvec-vector.json';a.click();URL.revokeObjectURL(a.href);};
+load();
+</script>
+</body></html>
